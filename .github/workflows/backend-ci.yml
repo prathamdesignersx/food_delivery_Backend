@@ -59,7 +59,7 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail_key
+          printf '%s\n' "${{ secrets.LIGHTSAIL_SSH_KEY }}" | tr -d '\r' > ~/.ssh/lightsail_key
           chmod 600 ~/.ssh/lightsail_key
           ssh-keyscan -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_HOST }}" >> ~/.ssh/known_hosts
 
