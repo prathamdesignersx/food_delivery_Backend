@@ -44,6 +44,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check required deployment secrets
+        run: |
+          test -n "${{ secrets.LIGHTSAIL_HOST }}" || (echo "Missing GitHub Secret: LIGHTSAIL_HOST" && exit 1)
+          test -n "${{ secrets.LIGHTSAIL_USER }}" || (echo "Missing GitHub Secret: LIGHTSAIL_USER" && exit 1)
+          test -n "${{ secrets.LIGHTSAIL_SSH_KEY }}" || (echo "Missing GitHub Secret: LIGHTSAIL_SSH_KEY" && exit 1)
+          test -n "${{ secrets.JWT_SECRET }}" || (echo "Missing GitHub Secret: JWT_SECRET" && exit 1)
+          test -n "${{ secrets.SALT }}" || (echo "Missing GitHub Secret: SALT" && exit 1)
+          test -n "${{ secrets.MONGO_URL }}" || (echo "Missing GitHub Secret: MONGO_URL" && exit 1)
+          test -n "${{ secrets.STRIPE_SECRET_KEY }}" || (echo "Missing GitHub Secret: STRIPE_SECRET_KEY" && exit 1)
+          test -n "${{ secrets.FRONTEND_URL }}" || (echo "Missing GitHub Secret: FRONTEND_URL" && exit 1)
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
