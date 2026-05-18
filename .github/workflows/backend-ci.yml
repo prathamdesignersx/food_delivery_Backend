@@ -65,8 +65,8 @@ jobs:
 
       - name: Upload backend files
         run: |
-          tar --exclude='.git' --exclude='node_modules' --exclude='.env' -czf backend.tar.gz .
-          scp -i ~/.ssh/lightsail_key -P "${{ secrets.LIGHTSAIL_PORT || '22' }}" backend.tar.gz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/backend.tar.gz"
+          tar --exclude='.git' --exclude='node_modules' --exclude='.env' -czf /tmp/backend.tar.gz .
+          scp -i ~/.ssh/lightsail_key -P "${{ secrets.LIGHTSAIL_PORT || '22' }}" /tmp/backend.tar.gz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/backend.tar.gz"
           ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "mkdir -p $DEPLOY_PATH && tar -xzf /tmp/backend.tar.gz -C $DEPLOY_PATH && rm /tmp/backend.tar.gz"
 
       - name: Write production env file
