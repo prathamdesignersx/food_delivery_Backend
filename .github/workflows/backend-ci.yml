@@ -125,7 +125,7 @@ jobs:
             pm2 save
 
             sleep 3
-            curl -fsS http://127.0.0.1:$4000/
+            curl -fsS http://127.0.0.1:$PORT/
           "
 
       - name: Restore old code if new code fails
@@ -150,5 +150,5 @@ jobs:
             pm2 restart '$PM2_APP_NAME' || pm2 start server.js --name '$PM2_APP_NAME'
             pm2 save
 
-            curl -fsS http://127.0.0.1:$4000/
+            curl -fsS http://127.0.0.1:$PORT/
           "
