@@ -30,13 +30,16 @@ jobs:
           find config controllers middleware models routes -name "*.js" -print0 | xargs -0 -n1 node --check
 
   deploy:
-    name: Deploy to Lightsail
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     env:
       DEPLOY_PATH: /var/www/backend
+      RELEASES_PATH: /var/www/backend-releases
+      RELEASE_PATH: /var/www/backend-releases/${{ github.sha }}
+      PREVIOUS_PATH: /var/www/backend.previous
       PM2_APP_NAME: backend
       PORT: 4000
 
@@ -58,12 +61,73 @@ jobs:
           chmod 600 ~/.ssh/lightsail_key
           ssh-keyscan -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Upload backend files
+      - name: Upload backend files to new release
         run: |
-          tar --exclude='.git' --exclude='node_modules' --exclude='.env' -czf /tmp/backend.tar.gz .
-          scp -i ~/.ssh/lightsail_key -P "${{ secrets.LIGHTSAIL_PORT || '22' }}" /tmp/backend.tar.gz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/backend.tar.gz"
-          ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "mkdir -p $DEPLOY_PATH && tar -xzf /tmp/backend.tar.gz -C $DEPLOY_PATH && rm /tmp/backend.tar.gz"
+          tar --exclude='.git' --exclude='node_modules' --exclude='.env' --exclude='uploads' -czf /tmp/backend-${{ github.sha }}.tar.gz .
+          scp -i ~/.ssh/lightsail_key -P "${{ secrets.LIGHTSAIL_PORT || '22' }}" /tmp/backend-${{ github.sha }}.tar.gz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/backend-${{ github.sha }}.tar.gz"
+          ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
+            set -e
+            mkdir -p '$RELEASES_PATH'
+            rm -rf '$RELEASE_PATH'
+            mkdir -p '$RELEASE_PATH'
+            tar -xzf /tmp/backend-${{ github.sha }}.tar.gz -C '$RELEASE_PATH'
+            rm /tmp/backend-${{ github.sha }}.tar.gz
 
-      - name: Install dependencies and restart PM2
+            if [ -f '$DEPLOY_PATH/.env' ]; then
+              cp '$DEPLOY_PATH/.env' '$RELEASE_PATH/.env'
+            fi
+
+            if [ -d '$DEPLOY_PATH/uploads' ]; then
+              cp -a '$DEPLOY_PATH/uploads' '$RELEASE_PATH/uploads'
+            else
+              mkdir -p '$RELEASE_PATH/uploads'
+            fi
+          "
+
+      - name: Validate new release before activation
         run: |
-          ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "cd $DEPLOY_PATH && npm ci --omit=dev && (pm2 restart $PM2_APP_NAME || pm2 start server.js --name $PM2_APP_NAME) && pm2 save"
+          ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
+            set -e
+            cd '$RELEASE_PATH'
+            npm ci --omit=dev
+            node --check server.js
+            find config controllers middleware models routes -name '*.js' -print0 | xargs -0 -n1 node --check
+          "
+
+      - name: Activate new release
+        id: activate_release
+        run: |
+          ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
+            set -e
+            rm -rf '$PREVIOUS_PATH'
+
+            if [ -d '$DEPLOY_PATH' ]; then
+              mv '$DEPLOY_PATH' '$PREVIOUS_PATH'
+            fi
+
+            mv '$RELEASE_PATH' '$DEPLOY_PATH'
+            cd '$DEPLOY_PATH'
+            (pm2 restart '$PM2_APP_NAME' || pm2 start server.js --name '$PM2_APP_NAME')
+            pm2 save
+            sleep 3
+            curl -fsS http://127.0.0.1:$PORT/
+          "
+
+      - name: Restore old release if activation fails
+        if: failure() && steps.activate_release.outcome == 'failure'
+        run: |
+          ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
+            set -e
+
+            if [ ! -d '$PREVIOUS_PATH' ]; then
+              echo 'No previous release found. Current server files were not replaced before this failure.'
+              exit 1
+            fi
+
+            rm -rf '$DEPLOY_PATH'
+            mv '$PREVIOUS_PATH' '$DEPLOY_PATH'
+            cd '$DEPLOY_PATH'
+            (pm2 restart '$PM2_APP_NAME' || pm2 start server.js --name '$PM2_APP_NAME')
+            pm2 save
+            curl -fsS http://127.0.0.1:$PORT/
+          "
