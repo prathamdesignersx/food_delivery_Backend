@@ -26,7 +26,7 @@ app.use("/api/cart", cartRouter);
 app.use("/api/order", orderRouter);
 
 app.get("/", (req, res) => {
-  res.send("API  is always Working");
+  res.sen("API  is always Working");
 });
 
 app.listen(port, () => {
