@@ -37,9 +37,8 @@ jobs:
 
     env:
       DEPLOY_PATH: /var/www/backend
-      RELEASES_PATH: /var/www/backend-releases
-      RELEASE_PATH: /var/www/backend-releases/${{ github.sha }}
-      PREVIOUS_PATH: /var/www/backend.previous
+      RELEASE_PATH: /tmp/backend-release-${{ github.sha }}
+      BACKUP_ARCHIVE: /tmp/backend-backup-${{ github.sha }}.tar.gz
       PM2_APP_NAME: backend
       PORT: 4000
 
@@ -67,7 +66,6 @@ jobs:
           scp -i ~/.ssh/lightsail_key -P "${{ secrets.LIGHTSAIL_PORT || '22' }}" /tmp/backend-${{ github.sha }}.tar.gz "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/backend-${{ github.sha }}.tar.gz"
           ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
             set -e
-            mkdir -p '$RELEASES_PATH'
             rm -rf '$RELEASE_PATH'
             mkdir -p '$RELEASE_PATH'
             tar -xzf /tmp/backend-${{ github.sha }}.tar.gz -C '$RELEASE_PATH'
@@ -99,13 +97,11 @@ jobs:
         run: |
           ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
             set -e
-            rm -rf '$PREVIOUS_PATH'
-
-            if [ -d '$DEPLOY_PATH' ]; then
-              mv '$DEPLOY_PATH' '$PREVIOUS_PATH'
-            fi
-
-            mv '$RELEASE_PATH' '$DEPLOY_PATH'
+            mkdir -p '$DEPLOY_PATH'
+            cd '$DEPLOY_PATH'
+            tar -czf '$BACKUP_ARCHIVE' .
+            find '$DEPLOY_PATH' -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            tar -C '$RELEASE_PATH' -cf - . | tar -C '$DEPLOY_PATH' -xf -
             cd '$DEPLOY_PATH'
             (pm2 restart '$PM2_APP_NAME' || pm2 start server.js --name '$PM2_APP_NAME')
             pm2 save
@@ -119,13 +115,14 @@ jobs:
           ssh -i ~/.ssh/lightsail_key -p "${{ secrets.LIGHTSAIL_PORT || '22' }}" "${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}" "
             set -e
 
-            if [ ! -d '$PREVIOUS_PATH' ]; then
-              echo 'No previous release found. Current server files were not replaced before this failure.'
+            if [ ! -f '$BACKUP_ARCHIVE' ]; then
+              echo 'No previous release backup found. Current server files were not replaced before this failure.'
               exit 1
             fi
 
-            rm -rf '$DEPLOY_PATH'
-            mv '$PREVIOUS_PATH' '$DEPLOY_PATH'
+            mkdir -p '$DEPLOY_PATH'
+            find '$DEPLOY_PATH' -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            tar -xzf '$BACKUP_ARCHIVE' -C '$DEPLOY_PATH'
             cd '$DEPLOY_PATH'
             (pm2 restart '$PM2_APP_NAME' || pm2 start server.js --name '$PM2_APP_NAME')
             pm2 save
