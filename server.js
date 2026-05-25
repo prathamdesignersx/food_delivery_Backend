@@ -32,3 +32,6 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Server Started on port: ${port}`);
 });
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
